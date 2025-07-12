@@ -1,0 +1,5 @@
+wget -c https://zenodo.org/records/4060432/files/FSD50K.dev_audio.z01?download=1 -O FSD50K.dev_audio.z01
+wget -c https://zenodo.org/records/4060432/files/FSD50K.dev_audio.z02?download=1 -O FSD50K.dev_audio.z02
+wget -c https://zenodo.org/records/4060432/files/FSD50K.dev_audio.z03?download=1 -O FSD50K.dev_audio.z03
+wget -c https://zenodo.org/records/4060432/files/FSD50K.dev_audio.z04?download=1 -O FSD50K.dev_audio.z04
+wget -c https://zenodo.org/records/4060432/files/FSD50K.dev_audio.z05?download=1 -O FSD50K.dev_audio.z05

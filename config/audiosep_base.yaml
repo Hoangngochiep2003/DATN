@@ -1,0 +1,32 @@
+data:
+  sampling_rate: 16000
+  segment_seconds: 10.0
+  max_mix_num: 2
+  loudness_norm:
+    lower_db: -35
+    higher_db: -15
+  datafiles:
+    - 'datafiles/clotho_captions_development.json'
+    - 'datafiles/fsd50k_dev_auto_caption.json'
+
+model:
+  query_net: 'CLAP'
+  model_type: 'LightMUNet'
+  input_channels: 1
+  output_channels: 1
+  condition_size: 512
+  use_text_ratio: 1.0
+
+train:
+  num_nodes: 1
+  batch_size_per_device: 8   # Tối ưu cho MacBook M1 (8-core GPU)
+  sync_batchnorm: False
+  num_workers: 2  # Giảm cho M1
+  loss_type: 'l1_loss'
+  save_step_frequency: 10000
+  optimizer:
+    optimizer_type: 'AdamW'
+    learning_rate: 0.0001
+    lr_lambda_type: 'cosine'
+    warm_up_steps: 1000
+    reduce_lr_steps: 100000 
