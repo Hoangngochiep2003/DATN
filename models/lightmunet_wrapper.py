@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import sys
 import os
+import torchaudio
 
 # Import LightMUNet từ models.LightMUNet
 from models.LightMUNet import LightMUNet
@@ -54,13 +55,13 @@ class LightMUNetWrapper(nn.Module):
         # FiLM cho down layers (lấy số channels thực tế từ block cuối cùng)
         for i, down_layer in enumerate(self.lightmunet.down_layers):
             layer_channels = self._get_last_out_channels(down_layer)
-            if layer_channels is None:
+            if not isinstance(layer_channels, int):
                 layer_channels = self.init_filters * (2 ** i)
             film_layers[f'down_{i}'] = nn.Linear(condition_size, layer_channels * 2)
         # FiLM cho up layers (lấy số channels thực tế từ block cuối cùng)
         for i, up_layer in enumerate(self.lightmunet.up_layers):
             layer_channels = self._get_last_out_channels(up_layer)
-            if layer_channels is None:
+            if not isinstance(layer_channels, int):
                 layer_channels = self.init_filters * (2 ** (2 - i))
             film_layers[f'up_{i}'] = nn.Linear(condition_size, layer_channels * 2)
         # FiLM cho final conv
@@ -98,15 +99,21 @@ class LightMUNetWrapper(nn.Module):
         """
         Forward pass tương thích với ResUNet30 interface
         """
-        mixtures = input_dict['mixture']  # (B, 1, T, F) mong muốn
+        mixtures = input_dict['mixture']  # (B, 1, N) waveform
         conditions = input_dict['condition']  # (B, condition_size)
 
+        # Convert waveform to mel-spectrogram
+        if mixtures.dim() == 3:  # (B, 1, N)
+            mixtures = mixtures.squeeze(1)  # (B, N)
+        mel_transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=16000, n_fft=1024, hop_length=320, n_mels=128
+        ).to(mixtures.device)
+        mixtures = mel_transform(mixtures)  # (B, n_mels, T)
+        mixtures = mixtures.unsqueeze(1)    # (B, 1, n_mels, T)
+        mixtures = mixtures.transpose(2, 3) # (B, 1, T, n_mels)
+
         # Đảm bảo mixtures luôn là [B, 1, T, F]
-        if mixtures.dim() == 3:
-            mixtures = mixtures.unsqueeze(1)
-        elif mixtures.shape[1] != 1:
-            # Nếu channel != 1, lấy channel đầu tiên
-            mixtures = mixtures[:, 0:1, ...]
+        # (đã đúng shape sau bước trên)
 
         print("mixtures shape:", mixtures.shape)
 

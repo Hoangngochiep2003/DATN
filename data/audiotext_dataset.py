@@ -3,6 +3,7 @@ import random
 import torch
 import torchaudio
 from torch.utils.data import Dataset
+import os
 
 
 class AudioTextDataset(Dataset):
@@ -53,28 +54,28 @@ class AudioTextDataset(Dataset):
         return waveform
 
     def _read_audio(self, index):
-        audio_path = None
+        entry = self.all_data_json[index]
+        audio_path = entry.get('wav', None) if isinstance(entry, dict) else None
+        if not audio_path or not os.path.exists(audio_path):
+            return None, None, None
         try:
-            entry = self.all_data_json[index]
-            audio_path = entry.get('wav', None)
-            if audio_path is None:
-                raise KeyError("'wav' key not found in data entry")
             audio_data, audio_rate = torchaudio.load(audio_path, channels_first=True)
             text = entry.get('caption', "")
-
-            # drop short utterance
             if audio_data.size(1) < self.sampling_rate * 0.5:
                 raise Exception(f'{audio_path} is too short, drop it ...') 
-            
             return text, audio_data, audio_rate
-        
         except Exception as e:
             print(f'error: {e} occurs, when loading {audio_path}')
-            random_index = random.randint(0, len(self.all_data_json)-1)
-            return self._read_audio(index=random_index)
+            return None, None, None
 
     def __getitem__(self, index):
-        text, audio_data, audio_rate = self._read_audio(index)
+        for _ in range(10):  # thử tối đa 10 lần
+            text, audio_data, audio_rate = self._read_audio(index)
+            if audio_data is not None and audio_rate is not None:
+                break
+            index = random.randint(0, len(self.all_data_json)-1)
+        else:
+            raise RuntimeError("Too many invalid audio entries in dataset.")
         audio_len = audio_data.shape[1] / audio_rate
         # convert stereo to single channel
         if audio_data.shape[0] > 1:
@@ -83,14 +84,21 @@ class AudioTextDataset(Dataset):
             audio_data = audio_data.squeeze(0)
         # resample audio clip
         if audio_rate != self.sampling_rate:
-            audio_data = torchaudio.functional.resample(audio_data, orig_freq=audio_rate, new_freq=self.sampling_rate)
+            audio_data = torchaudio.functional.resample(audio_data, orig_freq=int(audio_rate), new_freq=self.sampling_rate)
         audio_data = audio_data.unsqueeze(0)
         audio_data = self._cut_or_randomcrop(audio_data)    # [1, N]
+
+        # Convert waveform to mel-spectrogram for target
+        mel_transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=self.sampling_rate, n_fft=1024, hop_length=320, n_mels=128
+        )
+        mel = mel_transform(audio_data.squeeze(0))  # (n_mels, T)
+        mel = mel.unsqueeze(0).transpose(1, 2)      # (1, T, n_mels)
 
         data_dict = {
             'text': text,
             'mixture': audio_data,   # input cho model (waveform hỗn hợp)
-            'waveform': audio_data,  # target (ground truth cho truy vấn)
+            'waveform': mel,         # target là mel-spectrogram
             'modality': 'audio_text'
         }
         return data_dict

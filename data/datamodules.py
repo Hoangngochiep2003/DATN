@@ -12,22 +12,6 @@ class DataModule(pl.LightningDataModule):
         batch_size: int,
         num_workers: int
     ):
-        r"""Data module. To get one batch of data:
-
-        code-block:: python
-
-            data_module.setup()
-
-            for batch_data_dict in data_module.train_dataloader():
-                print(batch_data_dict.keys())
-                break
-
-        Args:
-            train_sampler: Sampler object
-            train_dataset: Dataset object
-            num_workers: int
-            distributed: bool
-        """
         super().__init__()
         self._train_dataset = train_dataset
         self.num_workers = num_workers
@@ -65,11 +49,6 @@ class DataModule(pl.LightningDataModule):
         )
 
         return train_loader
-
-    def val_dataloader(self):
-        # val_split = Dataset(...)
-        # return DataLoader(val_split)
-        pass
 
     def test_dataloader(self):
         # test_split = Dataset(...)

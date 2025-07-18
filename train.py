@@ -6,7 +6,7 @@ from typing import List, NoReturn
 import lightning.pytorch as pl
 from lightning.pytorch.strategies import DDPStrategy
 from torch.utils.tensorboard import SummaryWriter
-from data.datamodules import *
+from data.datamodules import DataModule
 from utils import create_logging, parse_yaml
 from models.resunet import *
 from losses import get_loss_function
@@ -15,6 +15,8 @@ from data.waveform_mixers import SegmentMixer
 from models.clap_encoder import CLAP_Encoder
 from callbacks.base import CheckpointEveryNSteps
 from optimizers.lr_schedulers import get_lr_lambda
+from lightning.pytorch.callbacks import ModelCheckpoint
+from data.audiotext_dataset import AudioTextDataset
 
 torch.set_float32_matmul_precision('high')
 
@@ -44,12 +46,7 @@ def get_dirs(
     yaml_name = pathlib.Path(config_yaml).stem
 
     # Directory to save checkpoints
-    checkpoints_dir = os.path.join(
-        workspace,
-        "checkpoints",
-        filename,
-        "{},devices={}".format(yaml_name, devices_num),
-    )
+    checkpoints_dir = "/content/drive/MyDrive/checkpoint"
     os.makedirs(checkpoints_dir, exist_ok=True)
 
     # Directory to save logs
@@ -158,6 +155,7 @@ def train(args) -> NoReturn:
     # Configuration of data
     max_mix_num = configs['data']['max_mix_num']
     sampling_rate = configs['data']['sampling_rate']
+    segment_seconds = configs['data']['segment_seconds']
     lower_db = configs['data']['loudness_norm']['lower_db']
     higher_db = configs['data']['loudness_norm']['higher_db']
 
@@ -195,8 +193,14 @@ def train(args) -> NoReturn:
     logging.info(configs)
 
     # data module
-    data_module = get_data_module(
-        config_yaml=config_yaml,
+    train_datafile = '/content/datafiles/fsd50k_dev_auto_caption.json'
+    train_dataset = AudioTextDataset(
+        datafiles=[train_datafile],
+        sampling_rate=sampling_rate,
+        max_clip_len=segment_seconds,
+    )
+    data_module = DataModule(
+        train_dataset=train_dataset,
         batch_size=batch_size,
         num_workers=num_workers,
     )
@@ -252,6 +256,17 @@ def train(args) -> NoReturn:
 
     callbacks = [checkpoint_every_n_steps]
 
+    # ModelCheckpoint callback để lưu checkpoint tốt nhất theo val_sdr
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=checkpoints_dir,
+        filename="best-checkpoint",
+        monitor="val_sdr",
+        mode="max",
+        save_top_k=1,
+        save_last=True,
+    )
+    callbacks.append(checkpoint_callback)
+
     trainer = pl.Trainer(
         accelerator='auto',
         devices='auto',
@@ -266,7 +281,7 @@ def train(args) -> NoReturn:
         use_distributed_sampler=True,
         sync_batchnorm=sync_batchnorm,
         num_sanity_val_steps=2,
-        enable_checkpointing=False,
+        enable_checkpointing=True,
         enable_progress_bar=True,
         enable_model_summary=True,
     )
@@ -274,8 +289,6 @@ def train(args) -> NoReturn:
     # Fit, evaluate, and save checkpoints.
     trainer.fit(
         model=pl_model, 
-        train_dataloaders=None,
-        val_dataloaders=None,
         datamodule=data_module,
         ckpt_path=resume_checkpoint_path,
     )

@@ -74,7 +74,7 @@ class AudioSep(pl.LightningModule, PyTorchModelHubMixin):
         # [important] fix random seeds across devices
         random.seed(batch_idx)
 
-        batch_audio_text_dict = batch_data_dict['audio_text']
+        batch_audio_text_dict = batch_data_dict
 
         batch_text = batch_audio_text_dict['text']
         # batch_audio = batch_audio_text_dict['waveform']
@@ -107,18 +107,62 @@ class AudioSep(pl.LightningModule, PyTorchModelHubMixin):
         self.ss_model.train()
         sep_segment = self.ss_model(input_dict)['waveform']
         sep_segment = sep_segment.squeeze()
-        # (batch_size, 1, segment_samples)
+        # (batch_size, 1, segment_samples) hoặc (batch_size, T, n_mels)
 
         output_dict = {
             'segment': sep_segment,
         }
 
+        # Crop output và target về cùng chiều time nhỏ nhất trước khi tính loss
+        output = output_dict['segment']
+        target = target_dict['segment']
+        # Nếu target là 4D (B, 1, T, n_mels), squeeze channel
+        if target.dim() == 4:
+            target = target.squeeze(1)
+        # Nếu output là 4D (B, 1, T, n_mels), squeeze channel
+        if output.dim() == 4:
+            output = output.squeeze(1)
+        min_t = min(output.shape[1], target.shape[1])
+        output = output[:, :min_t, :]
+        target = target[:, :min_t, :]
+
         # Calculate loss.
-        loss = self.loss_function(output_dict['segment'], target_dict['segment'])
+        loss = self.loss_function(output, target)
 
         self.log_dict({"train_loss": loss})
         
         return loss
+
+    def validation_step(self, batch_data_dict, batch_idx):
+        batch_audio_text_dict = batch_data_dict
+        batch_text = batch_audio_text_dict['text']
+        mixtures = batch_audio_text_dict['mixture']
+        if isinstance(mixtures, list):
+            mixtures = torch.stack(mixtures, dim=0)
+        if self.query_encoder_type == 'CLAP':
+            conditions = self.query_encoder.get_query_embed(
+                modality='hybird',
+                text=batch_text,
+                audio=mixtures.squeeze(1) if mixtures.dim() > 2 else mixtures,
+                use_text_ratio=self.use_text_ratio,
+            )
+        input_dict = {
+            'mixture': mixtures,
+            'condition': conditions,
+        }
+        target = batch_audio_text_dict['waveform']
+        if target.dim() == 4:
+            target = target.squeeze(1)
+        output = self.ss_model(input_dict)['waveform']
+        if output.dim() == 4:
+            output = output.squeeze(1)
+        min_t = min(output.shape[1], target.shape[1])
+        output = output[:, :min_t, :]
+        target = target[:, :min_t, :]
+        # Giả sử compute_sdr là hàm đã có, nếu chưa có bạn cần định nghĩa
+        sdr = compute_sdr(output, target)
+        self.log('val_sdr', sdr, prog_bar=True, on_epoch=True)
+        return sdr
 
     def test_step(self, batch, batch_idx):
         pass
@@ -162,3 +206,9 @@ def get_model_class(model_type):
         return LightMUNetWrapper
     else:
         raise NotImplementedError(f"Model type '{model_type}' not implemented")
+
+
+def compute_sdr(output, target):
+    # Placeholder: trả về -loss để Lightning chọn checkpoint tốt nhất
+    # Bạn nên thay bằng hàm SDR thực tế nếu có
+    return -torch.nn.functional.l1_loss(output, target)
