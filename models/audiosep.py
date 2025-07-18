@@ -74,9 +74,17 @@ class AudioSep(pl.LightningModule, PyTorchModelHubMixin):
         # [important] fix random seeds across devices
         random.seed(batch_idx)
 
-        batch_audio_text_dict = batch_data_dict
+        if 'audio_text' in batch_data_dict:
+            batch_audio_text_dict = batch_data_dict['audio_text']
+        else:
+            batch_audio_text_dict = batch_data_dict
 
-        batch_text = batch_audio_text_dict['text']
+        if 'text' in batch_audio_text_dict:
+            batch_text = batch_audio_text_dict['text']
+        elif 'caption' in batch_audio_text_dict:
+            batch_text = batch_audio_text_dict['caption']
+        else:
+            raise KeyError("Batch không có key 'text' hoặc 'caption'. Hãy kiểm tra lại collate_fn và dataset.")
         # batch_audio = batch_audio_text_dict['waveform']
         device = batch_audio_text_dict['waveform'].device
 
