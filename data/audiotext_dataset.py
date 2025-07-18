@@ -35,9 +35,9 @@ class AudioTextDataset(Dataset):
         # random crop
         if waveform.size(1) > self.max_length:
             random_idx = random.randint(0, waveform.size(1)-self.max_length)
-            waveform = waveform[:, random_idx:random_idx+self.max_length]
+            waveform = waveform[:, random_idx:random_idx+int(self.max_length)]
         else:
-            temp_wav = torch.zeros(1, self.max_length)
+            temp_wav = torch.zeros(1, int(self.max_length))
             temp_wav[:, 0:waveform.size(1)] = waveform
             waveform = temp_wav
 
@@ -73,19 +73,30 @@ class AudioTextDataset(Dataset):
             audio_data = (audio_data[0] + audio_data[1]) / 2
         else:
             audio_data = audio_data.squeeze(0)
-        
         # resample audio clip
         if audio_rate != self.sampling_rate:
             audio_data = torchaudio.functional.resample(audio_data, orig_freq=audio_rate, new_freq=self.sampling_rate)
-        
         audio_data = audio_data.unsqueeze(0)
-        
-        audio_data = self._cut_or_randomcrop(audio_data)            
+        audio_data = self._cut_or_randomcrop(audio_data)    # [1, N]
+
+        # Convert waveform to mel-spectrogram [1, F, T]
+        mel_spec_transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=self.sampling_rate,
+            n_fft=1024,
+            hop_length=320,
+            n_mels=128
+        )
+        mel_spec = mel_spec_transform(audio_data)  # [1, F, T] hoặc [1, T, F]
+        # Đảm bảo shape đúng [1, n_mels, T]
+        if mel_spec.shape[1] == 1 and mel_spec.shape[2] > 1:
+            mel_spec = mel_spec.transpose(1, 2)
+        mel_spec = mel_spec.clamp(min=1e-5).log()  # log-mel
+        print("mel_spec shape:", mel_spec.shape)
 
         data_dict = {
             'text': text, 
-            'waveform': audio_data,  
+            'mixture': mel_spec,  # [1, F, T]
+            'waveform': audio_data,  # [1, N]
             'modality': 'audio_text'
         }
-
         return data_dict

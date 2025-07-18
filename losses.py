@@ -1,4 +1,4 @@
-import torch
+import torch.nn as nn
 
 
 def l1(output, target):
@@ -10,8 +10,9 @@ def l1_wav(output_dict, target_dict):
 
 
 def get_loss_function(loss_type):
-    if loss_type == "l1_wav":
-        return l1_wav
-
+    if loss_type == 'l1_loss':
+        return nn.L1Loss()
+    elif loss_type == 'mse_loss':
+        return nn.MSELoss()
     else:
-        raise NotImplementedError("Error!")
+        raise NotImplementedError(f"Loss type '{loss_type}' is not implemented!")

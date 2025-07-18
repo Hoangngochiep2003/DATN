@@ -1,5 +1,6 @@
 from functools import partial
 from typing import Callable
+import math
 
 
 def linear_warm_up(
@@ -67,35 +68,13 @@ def constant_warm_up(
     return lr_scale
 
 
-def get_lr_lambda(
-    lr_lambda_type: str, 
-    **kwargs
-) -> Callable:
-    r"""Get learning scheduler.
-
-    Args:
-        lr_lambda_type (str), e.g., "constant_warm_up" | "linear_warm_up"
-
-    Returns:
-        lr_lambda_func (Callable)
-    """
-    if lr_lambda_type == "constant_warm_up":
-
-        lr_lambda_func = partial(
-            constant_warm_up, 
-            warm_up_steps=kwargs["warm_up_steps"], 
-            reduce_lr_steps=kwargs["reduce_lr_steps"],
-        )
-
-    elif lr_lambda_type == "linear_warm_up":
-
-        lr_lambda_func = partial(
-            linear_warm_up, 
-            warm_up_steps=kwargs["warm_up_steps"], 
-            reduce_lr_steps=kwargs["reduce_lr_steps"],
-        )
-
+def get_lr_lambda(lr_lambda_type, warm_up_steps, reduce_lr_steps):
+    if lr_lambda_type == 'cosine':
+        def lr_lambda(current_step):
+            if current_step < warm_up_steps:
+                return float(current_step) / float(max(1, warm_up_steps))
+            progress = float(current_step - warm_up_steps) / float(max(1, reduce_lr_steps - warm_up_steps))
+            return 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
+        return lr_lambda
     else:
-        raise NotImplementedError
-
-    return lr_lambda_func
+        raise NotImplementedError(f"LR scheduler type '{lr_lambda_type}' is not implemented!")
