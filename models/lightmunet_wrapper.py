@@ -124,7 +124,13 @@ class LightMUNetWrapper(nn.Module):
         down_x.reverse()
         for i, (up_sample, up_layer) in enumerate(zip(self.lightmunet.up_samples, self.lightmunet.up_layers)):
             x = up_sample(x)
-            x = x + down_x[i + 1]  # Skip connection
+            # Crop để skip connection cùng shape
+            skip = down_x[i + 1]
+            # Crop từng chiều về min
+            min_shape = [min(x.shape[d], skip.shape[d]) for d in range(x.dim())]
+            x = x[..., :min_shape[-2], :min_shape[-1]]
+            skip = skip[..., :min_shape[-2], :min_shape[-1]]
+            x = x + skip  # Skip connection
             x = self._apply_film(x, conditions, f'up_{i}')
             x = up_layer(x)
 

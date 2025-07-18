@@ -20,7 +20,13 @@ class AudioTextDataset(Dataset):
         all_data_json = []
         for datafile in datafiles:
             with open(datafile, 'r') as fp:
-                data_json = json.load(fp)['data']
+                loaded = json.load(fp)
+                if isinstance(loaded, dict) and 'data' in loaded:
+                    data_json = loaded['data']
+                elif isinstance(loaded, list):
+                    data_json = loaded
+                else:
+                    raise ValueError(f"File {datafile} không đúng định dạng JSON mong muốn!")
                 all_data_json.extend(data_json)
         self.all_data_json = all_data_json
 
@@ -47,10 +53,14 @@ class AudioTextDataset(Dataset):
         return waveform
 
     def _read_audio(self, index):
+        audio_path = None
         try:
-            audio_path = self.all_data_json[index]['wav']
+            entry = self.all_data_json[index]
+            audio_path = entry.get('wav', None)
+            if audio_path is None:
+                raise KeyError("'wav' key not found in data entry")
             audio_data, audio_rate = torchaudio.load(audio_path, channels_first=True)
-            text = self.all_data_json[index]['caption']
+            text = entry.get('caption', "")
 
             # drop short utterance
             if audio_data.size(1) < self.sampling_rate * 0.5:
@@ -64,12 +74,10 @@ class AudioTextDataset(Dataset):
             return self._read_audio(index=random_index)
 
     def __getitem__(self, index):
-        # create a audio tensor  
         text, audio_data, audio_rate = self._read_audio(index)
         audio_len = audio_data.shape[1] / audio_rate
-        # convert stero to single channel
+        # convert stereo to single channel
         if audio_data.shape[0] > 1:
-            # audio_data: [samples]
             audio_data = (audio_data[0] + audio_data[1]) / 2
         else:
             audio_data = audio_data.squeeze(0)
@@ -79,24 +87,10 @@ class AudioTextDataset(Dataset):
         audio_data = audio_data.unsqueeze(0)
         audio_data = self._cut_or_randomcrop(audio_data)    # [1, N]
 
-        # Convert waveform to mel-spectrogram [1, F, T]
-        mel_spec_transform = torchaudio.transforms.MelSpectrogram(
-            sample_rate=self.sampling_rate,
-            n_fft=1024,
-            hop_length=320,
-            n_mels=128
-        )
-        mel_spec = mel_spec_transform(audio_data)  # [1, F, T] hoặc [1, T, F]
-        # Đảm bảo shape đúng [1, n_mels, T]
-        if mel_spec.shape[1] == 1 and mel_spec.shape[2] > 1:
-            mel_spec = mel_spec.transpose(1, 2)
-        mel_spec = mel_spec.clamp(min=1e-5).log()  # log-mel
-        print("mel_spec shape:", mel_spec.shape)
-
         data_dict = {
-            'text': text, 
-            'mixture': mel_spec,  # [1, F, T]
-            'waveform': audio_data,  # [1, N]
+            'text': text,
+            'mixture': audio_data,   # input cho model (waveform hỗn hợp)
+            'waveform': audio_data,  # target (ground truth cho truy vấn)
             'modality': 'audio_text'
         }
         return data_dict

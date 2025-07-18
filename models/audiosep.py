@@ -77,29 +77,31 @@ class AudioSep(pl.LightningModule, PyTorchModelHubMixin):
         batch_audio_text_dict = batch_data_dict['audio_text']
 
         batch_text = batch_audio_text_dict['text']
-        batch_audio = batch_audio_text_dict['waveform']
-        device = batch_audio.device
-        
-        mixtures, segments = self.waveform_mixer(
-            waveforms=batch_audio
-        )
+        # batch_audio = batch_audio_text_dict['waveform']
+        device = batch_audio_text_dict['waveform'].device
+
+        # Lấy mel-spectrogram nếu có, nếu không thì dùng waveform (dành cho backward compatibility)
+        mixtures = batch_audio_text_dict['mixture']
+        if isinstance(mixtures, list):
+            mixtures = torch.stack(mixtures, dim=0)
 
         # calculate text embed for audio-text data
         if self.query_encoder_type == 'CLAP':
             conditions = self.query_encoder.get_query_embed(
                 modality='hybird',
                 text=batch_text,
-                audio=segments.squeeze(1),
+                audio=mixtures.squeeze(1) if mixtures.dim() > 2 else mixtures,
                 use_text_ratio=self.use_text_ratio,
             )
 
         input_dict = {
-            'mixture': mixtures[:, None, :].squeeze(1),
+            'mixture': mixtures,
             'condition': conditions,
         }
 
+        # Target là waveform
         target_dict = {
-            'segment': segments.squeeze(1),
+            'segment': batch_audio_text_dict['waveform'],
         }
 
         self.ss_model.train()
@@ -112,7 +114,7 @@ class AudioSep(pl.LightningModule, PyTorchModelHubMixin):
         }
 
         # Calculate loss.
-        loss = self.loss_function(output_dict, target_dict)
+        loss = self.loss_function(output_dict['segment'], target_dict['segment'])
 
         self.log_dict({"train_loss": loss})
         
