@@ -14,8 +14,6 @@ from huggingface_hub import PyTorchModelHubMixin
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from UMambaEnc import UMambaEnc
-from UMambaBot import UMambaBot  
 from models.lightmunet_wrapper import LightMUNetWrapper
 
 
@@ -158,10 +156,6 @@ def get_model_class(model_type):
     if model_type == 'ResUNet30' or model_type == 'DenseUNet30':
         from models.resunet import ResUNet30
         return ResUNet30
-    elif model_type == 'UMambaEnc':
-        return UMambaEnc
-    elif model_type == 'UMambaBot':
-        return UMambaBot
     elif model_type == 'LightMUNet':
         return LightMUNetWrapper
     else:
